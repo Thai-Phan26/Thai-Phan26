@@ -1,5 +1,7 @@
 # 💫 About Me:
-Aspiring Data Analyst<br>Master of Analytics student at RMIT, Melbourne, Australia<br>Currently working on a Homeloan Scorecard project for SAS
+🔬 Aspiring Data Analyst<br>
+📝 Master of Analytics student at RMIT, Melbourne, Australia<be>
+💼 Currently working on a Homeloan Scorecard project for SAS
 
 
 ## 🌐 Socials:
