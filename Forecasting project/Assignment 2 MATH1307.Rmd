@@ -1,0 +1,507 @@
+---
+title: "Assignment 2 MATH1307"
+output: html_document
+date: "2023-09-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tseries)
+library(vars)
+library(TSA)
+library(forecast)
+library(x12)
+library(dlm)
+library(dLagM)
+library(car)
+library(knitr)
+library(dynlm)
+```
+
+<font size="5"> **Analysing and forecasting the horizontal solar radiation levels and analysing the correlation between quarterly Residential Property Price Index (PPI) in Melbourne and quarterly population change over the previous quarter in Victoria ** </font>
+
+<font size="5"> **Van Thai Phan - s3818387** </font>
+
+<font size="7"> **Introduction** </font>
+
+This report consists of two parts. The first part aims to analyse and forecast the amount of horizontal solar radiation reaching the ground at a particular location over the globe. In order to achieve this task, I will apply time series regression method to fit distributed lag models with the monthly precipitation series as an independent explanatory series. Moreover, I will also be using exponential smoothing methods. The expectation is to find the best model to provide an accurate forecast of the amount of horizontal solar radiation.
+
+On the other hand, the second part of the report will analyse the correlation between quarterly Residential Property Price Index (PPI) in Melbourne and quarterly population change over the previous quarter in Victoria between September 2003 and December 2016. The data will be explored and investigated in order to demonstrate whether the correlation between these two series is spurious or not.
+
+
+<font size="7"> **Task 1** </font>
+
+<font size="7"> **Data description** </font>
+
+The first step is to load the data and create time series for solar radiation and precipitation values.
+
+```{r cars}
+Solar_data <- read.csv("/Users/macbookair/Desktop/data1.csv")
+head(Solar_data)
+```
+
+```{r}
+Solar_x <- read.csv("/Users/macbookair/Desktop/data.x.csv")
+Solar_x_ts <- ts(Solar_x)
+```
+
+```{r}
+solar <- ts(Solar_data$solar, start =c(1960,1), frequency = 12)
+head(solar)
+```
+
+```{r}
+precipit <- ts(Solar_data$ppt, start = c(1960,1), frequency = 12)
+head(precipit)
+```
+
+```{r}
+Solar_data_ts <- ts(Solar_data, start=c(1960,1), frequency= 12)
+head(Solar_data_ts)
+```
+
+<font size="7"> **Data visualisation and exploration** </font>
+
+```{r}
+plot(solar,  main = "Time series plot of solar radiation series", ylab = "Solar radiation", xlab = "Time")
+points(solar, x=time(solar), pch = as.vector(season(solar)))
+```
+
+From the above plot, the following characteristics can be observed:
+
+* There is no noticable trend in the series
+
+* Seasonality is obviously present, with the highest values observed in May, June, July, and August while the lowest values are observed in December and January. 
+
+* There is no changing variance
+
+* There is an obvious intervention point around 1965 where solar radiation values are extremely low
+
+Next, a ACF plot will be created and a ADF test, along with a PP test will be conducted to further explore the solar radiation time series.
+
+```{r}
+acf(solar, lag.max = 48, main="ACF plot of solar radiation series")
+```
+
+```{r}
+adf.test(solar, k=ar(solar)$order)
+pp.test(solar)
+```
+
+The ACF plot shows a strong seasonality pattern. The ADF test and the PP test all have p values smaller than 0.05, therefore, it is safe to conclude that the time series is stationary. Next, the time series will be decompsed.
+
+```{r}
+solar.decom = stl(solar, t.window=15, s.window="periodic", robust=TRUE)
+plot(solar.decom, main="Decomposition of Solar radiation time series")
+```
+
+According to the decomposition plot, the Solar radiation time series has strong seasonality but no obvious trend. 
+
+Now, the process will be repeated for the Precipitaion time series, which will be used as the predictor for distributed lag models.
+
+```{r}
+plot(precipit, main ="Time series plot of precipitation series", ylab="Precipitation", xlab = "Time")
+points (precipit, x= time(precipit), pch = as.vector(season(precipit)))
+```
+
+From the above plot, the following characteristics can be observed:
+
+* There is no noticable trend in the series
+
+* Seasonality is obviously present, with the highest values observed in December and January and August while the lowest values are observed in July, August, and September. 
+
+* There is no changing variance
+
+* There is no intervention point
+
+Next, a ACF plot will be created and a ADF test, along with a PP test will be conducted to further explore the solar radiation time series.
+
+```{r}
+acf(precipit,lag.max = 48, main = "ACF plot of precipitation series")
+```
+
+```{r}
+adf.test(precipit,k=ar(precipit)$order)
+pp.test(precipit)
+```
+
+The ACF plot shows a strong seasonality pattern. The ADF test and the PP test all have p values smaller than 0.05, therefore, it is safe to conclude that the time series is stationary. Next, the time series will be decompsed.
+
+```{r}
+precipit.decom = stl(solar, t.window=15, s.window="periodic", robust=TRUE)
+plot(precipit.decom, main="Decomposition of Precipitation time series")
+```
+
+According to the decomposition plot, the Solar radiation time series has strong seasonality but no obvious trend.
+
+The correlation of the solar radiation series and the precipitation series is shown in the following plot:
+
+```{r}
+shift<- scale(Solar_data_ts)
+plot(shift, plot.type="s",col=c("turquoise", "red"),main= "Correlation between Solar radiation and precipitation")
+legend("topleft", lty=1, text.width = 14, col = c("turquoise", "red"), c("Solar Radiation", "Precipitation"))
+```
+
+From the plot, we can see that both series' high values corespond to the other's low values. Thus, indicating a negative correlation. To confirm this, the correlation coefficient is calculated.
+
+```{r}
+cor(solar,precipit)
+```
+
+The correlation coefficient is -0.4540277, thus confirming that the two series are negatively correlated.
+
+<font size="7"> **Time series regression models** </font>
+
+<font size="7"> **Finite distributed lag model** </font>
+
+The first model to be tested is the Finite distributed lag model. In order to select the most accurate model, we will create a loop that calculates AIC, BIC, and MASE. The model with the lowest values will be selected.
+
+```{r}
+for (i in 1:12){
+  model_a <- dlm(x = Solar_data$ppt, y = Solar_data$solar, q = i)
+  cat("q =", i, "AIC =", AIC(model_a$model), "BIC =", BIC(model_a$model), "MASE =", MASE(model_a)$MASE, "\n")
+}
+```
+
+```{r}
+fin_dlm <- dlm(x=Solar_data$ppt, y=Solar_data$solar, q=12)
+summary(fin_dlm)
+```
+
+```{r}
+vif(fin_dlm$model)
+```
+
+The AIC, BIC, and MASE values decrease as q value increases, therefore, the finite DLM that was fitted has a number of lags of 12.
+
+The R-squared value is 0.3077, this means that the model is only accountable for 30.7% of the variability in solar radiation, which is low. The F-test gave a p-value < 0.05, thus the model is statistically significant at 5% level. All VIF values are smaller than 10, indicating that the model does not suffer from multicollinearity. Next, a residual check is conducted.
+
+```{r}
+checkresiduals(fin_dlm$model)
+shapiro.test(residuals(fin_dlm$model))
+```
+
+The p-value output for the Breusch-Godfrey test is smaller than 0.05 indicates that there is serial correlation in the residuals. The null hypothesis of normality is rejected by the Shapiro-Wilk test, which also has a p-value smaller than 0.05. The residuals are not normally distributed. Overall, this model is not ideal.
+
+<font size="7"> **Polynomial distributed lag model** </font>
+
+The polynomial distributed lag model has a q=12 similar to the finite distributed lag model before.
+
+```{r}
+poly_dl <- polyDlm(x=as.vector(Solar_data$ppt), y=as.vector(Solar_data$solar), q=12,k=2)
+summary(poly_dl)
+vif(poly_dl$model)
+```
+
+The R-squared value is 0.3087, this means that the model is only accountable for 30.8% of the variability in solar radiation, which is low. The F-test gave a p-value < 0.05, thus the model is statistically significant at 5% level. The model suffers from multicollinearity as the VIF values of z.t1 and z.t2 are greater than 10.
+
+```{r}
+checkresiduals(poly_dl$model)
+shapiro.test(residuals(poly_dl$model))
+```
+
+The p-value output for the Breusch-Godfrey test is smaller than 0.05 indicates that there is serial correlation in the residuals. The null hypothesis of normality is rejected by the Shapiro-Wilk test, which also has a p-value smaller than 0.05. The residuals are not normally distributed. 
+
+Overall, the model is not suitable as it has low explainability and suffers from multicollinearity.
+
+<font size="7"> **Koyck model** </font>
+
+The Koyck model is implemented with precipitation as the predictor.
+
+```{r}
+K_model = koyckDlm(x=as.vector(Solar_data$ppt), y= as.vector(Solar_data$solar))
+summary(K_model$model, diagnostics=T)
+vif(K_model$model)
+```
+
+The R-squared value is 0.7591, this means that the model is accountable for 75.9% of the variability in solar radiation, which is higher than the other tested modesl but still not ideal. The weak instruments test gave a p-value < 0.05, thus the model is statistically significant at 5% level. Similarly, the Wu-Hausman test also produced a p-value smaller than 0.05, thus the correlation between the explanatory variable and the error term is significant at 5%. The model does not suffer from multicollinearity as all VIF values are smaller than 10.
+
+```{r}
+checkresiduals(K_model$model)
+shapiro.test(residuals(K_model$model))
+```
+
+The low p-value of the Ljung-Box test suggests that the residuals have serial correlation. However, the Shapiro-Wilk Normality Test has a p-value less than 0.05, which means that the residuals are not normally distributed. Overall, the Koyck model is not ideal.
+
+<font size="7"> **Dynamic lag model** </font>
+
+The following code creates two dynamic lag models:
+
+```{r}
+Y.t = solar
+X.t = precipit
+P.t.1 <- stats::lag(X.t, 1)
+P.t.2 <- stats::lag(X.t, 2)
+
+dyn_mod.1 = dynlm(Y.t ~ L(Y.t, 1) + L(Y.t, 2) +
+              X.t + P.t.1 + P.t.2 +
+              trend(Y.t) + season(Y.t))
+summary(dyn_mod.1)
+attr(dyn_mod.1,"class") = "lm"
+MASE(dyn_mod.1)
+checkresiduals(dyn_mod.1)
+shapiro.test(residuals(dyn_mod.1))
+vif(dyn_mod.1)
+```
+```{r}
+dyn_mod.2 = dynlm(Y.t ~ L(Y.t, 1) + L(Y.t, 2) +
+              X.t +
+              trend(Y.t) + season(Y.t))
+summary(dyn_mod.2)
+attr(dyn_mod.2,"class") = "lm"
+MASE(dyn_mod.2)
+checkresiduals(dyn_mod.2)
+shapiro.test(residuals(dyn_mod.2))
+vif(dyn_mod.2)
+```
+
+Looking at both of these models, they both have serial correlation due to their Breusch-Godfrey tests' p-value output being less than 0.05. However, looking at the residual plots of both models, it can be seen that there is some improvement in autocorrelation and seasonality compared to previously tested models. It is noteworthy that both models produced an adjusted R-squared value of around 0.947, meaning that they account for 94.7% of the variability in solar radiation. The F-test of both models gave a p-value < 0.05, thus both models are statistically significant at 5% level. The null hypothesis of normality of both models is rejected by their Shapiro-Wilk test results, which all have a p-value smaller than 0.05. They both suffer from multicollinearity as some VIF values are greater than 10. Thus, it can be concluded that the dynamic lag model is not ideal.
+
+<font size="7"> **Autoregressive distributed lag models** </font>
+
+The autoregressive distributed lag model is implemented. The model with the lowest MASE value will be selected for fitting.
+
+```{r}
+for (i in 1:3){
+  for(j in 1:3){
+    model_b = ardlDlm(x = as.vector(Solar_data$ppt), y = as.vector(Solar_data$solar), p = i , q = j)
+    cat("p =", i, "q =", j, "MASE =", MASE(model_b)$MASE, "\n")
+  }
+}
+```
+
+Model with p=3 and q=3 has the lowest MASE value. Thus, this is the model that will be fitted and analysed. 
+
+```{r}
+model_c <- ardlDlm(x=as.vector(Solar_data$ppt), y= as.vector(Solar_data$solar), p=3, q=3)
+summary(model_c)
+vif(model_c$model)
+```
+
+The R-squared value is 0.9287, this means that the model is accountable for 92.87% of the variability in solar radiation, which is relatively high. The F-test gave a p-value < 0.05, thus the model is statistically significant at 5% level. The model suffers from multicollinearity as some VIF values are greater than 10.
+
+```{r}
+checkresiduals(model_c$model)
+shapiro.test(residuals(model_c$model))
+```
+
+The p-value output for the Breusch-Godfrey test is smaller than 0.05 indicates that there is serial correlation in the residuals. The null hypothesis of normality is rejected by the Shapiro-Wilk test, which also has a p-value smaller than 0.05. The residuals are not normally distributed. Again, the model is not ideal.
+
+Overall, none of the tested time series regression models is ideal. A dataframe is created to store the MASE, AIC, and BIC values of different models. The dataframe is designed so that the accuracy values of future models will be added. First, we have to check the classes of the models.
+
+```{r}
+models_list <- list(fin_dlm = fin_dlm$model, poly_dl = poly_dl$model, K_model = K_model$model, model_c = model_c$model)
+model_classes <- sapply(models_list, class)
+print(model_classes)
+```
+
+From this, we can see that we have to transform "K_model" to "lm" class. Thus, we have the following codes to create the dataframe "accuracy_table":
+
+```{r}
+model_c <- ardlDlm(x=as.vector(Solar_data$ppt), y= as.vector(Solar_data$solar), p=3, q=3)
+models <- c("fin_dlm", "poly_dl", "K_model", "model_c")
+attr(K_model$model, "class") = "lm"
+aic <- AIC(fin_dlm$model, poly_dl$model, K_model$model, model_c$model)$AIC
+bic <- BIC(fin_dlm$model, poly_dl$model, K_model$model, model_c$model)$BIC
+MASE <- MASE(fin_dlm, poly_dl, K_model, model_c)$MASE
+accuracy_table <- data.frame(models, MASE, aic, bic)
+colnames(accuracy_table) <- c("Model", "MASE", "AIC", "BIC")
+head(accuracy_table)
+```
+
+<font size="7"> **Exponential smoothing** </font>
+
+The next method that will be tested is exponential smoothing. There are 6 models that include additive or multiplicative seasonality that need to be considered.
+
+```{r}
+exponential = c(T,F)
+seasonality <- c("additive","multiplicative")
+damped <- c(T,F)
+expa <- expand.grid(exponential, seasonality, damped)
+expa <- expa[-c(3,4),]
+f_aic <- array(NA, 6)
+f_bic <- array(NA, 6)
+f_mase <- array(NA, 6)
+levels <- array(NA, dim=c(6,3))
+for (i in 1:6){
+  holt_winters <- hw(solar, ES = expa[i,1], seasonal = toString(expa[i,2], damped = expa[i,3]))
+  f_aic[i] <- holt_winters$model$aic
+  f_bic[i] <- holt_winters$model$bic
+  f_mase[i] <- accuracy(holt_winters)[6]
+  levels[i,1] <- expa[i,1]
+  levels[i,2] <- toString(expa[i,2])
+  levels[i,3] <- expa[i,3]
+  checkresiduals(holt_winters)
+}
+```
+
+The exponential smoothing method still has autocorrelation judging from the p-values of the Ljung-Box tests as they are all less than 0.05. However, when looking at the residual plot of the Holt-Winter's multiplicative method, there is definitely a clear improvement in autocorrelation and seasonality compared to previously tested models.
+
+The new accuracy values of the exponential smoothing models is added to the "accuracy_table" data frame. The models can be identified in this format: trend (multiplicative or additive), seasonality (multiplicative or additive) and if the trend is damped (damped) or not damped (ND).
+
+```{r}
+newvalues <- data.frame(levels, f_mase, f_aic, f_bic)
+colnames(newvalues) <- c("Trend", "Seasonality", "damped", "MASE", "AIC", "BIC")
+newvalues$Trend <- factor(newvalues$Trend, levels = c(T,F), labels = c("multiplicative","additive"))
+newvalues$damped <- factor(newvalues$damped, levels = c(T,F), labels = c("damped","ND"))
+
+newvalues <- unite(newvalues, col = "Model", c("Trend","Seasonality","damped"))
+accuracy_table <- rbind(accuracy_table, newvalues)
+accuracy_table
+```
+
+<font size="7"> **State-space models** </font>
+
+Excluding the models that are prohibited in R due to stability issues, there are 8 state-space models that can be implemented.
+
+```{r}
+vlist <- c("AAA", "MAA", "MAM", "MMM")
+damp <- c(T,F)
+ets_models <- expand.grid(vlist, damp)
+ets_aic <- array(NA, 8)
+ets_mase <- array(NA,8)
+ets_bic <- array(NA,8)
+mod <- array(NA, dim=c(8,2))
+for (i in 1:8){
+  ets <- ets(solar, model = toString(ets_models[i, 1]), damped = ets_models[i,2])
+  ets_aic[i] <- ets$aic
+  ets_bic[i] <- ets$bic
+  ets_mase[i] <- accuracy(ets)[6]
+  mod[i,1] <- toString(ets_models[i,1])
+  mod[i,2] <- ets_models[i,2]
+}
+```
+
+Next, we use the "auto-fit" function to find the ideal model according to the software.
+
+```{r}
+auto_ets_solar <- ets(solar)
+summary(auto_ets_solar)
+```
+
+We then check the residuals of this model
+
+```{r}
+checkresiduals(auto_ets_solar)
+shapiro.test(residuals(auto_ets_solar))
+```
+
+Both the p-value output of the Ljung-Box test and the Shapiro-Wilk normality test are less than 0.05. Thus, we can see that the model has autocorrelation and is not normally distributed. Therefore, it is not ideal. However, it is noteworthy that the model's MASE value is quite low at 0.2461797 so it is worth considering as a viable forecasting model. The model's accuracy values are added into the "accuracy_table" data frame.
+
+```{r}
+calculate <- data.frame(mod, ets_mase, ets_aic, ets_bic)
+calculate$X2 <- factor(calculate$X2, levels = c(T,F), labels = c("Damped","ND"))
+calculate <- unite(calculate, "Model", c("X1","X2"))
+colnames(calculate) <- c("Model", "MASE", "AIC", "BIC")
+accuracy_table <- rbind(accuracy_table,calculate)
+
+accuracy_table <- arrange(accuracy_table, MASE)
+kable(accuracy_table, caption = "Different forecasting models sorted by MASE (Ascending)")
+```
+
+<font size="7"> **Forecasting** </font>
+
+The three models with the lowest MASE are selected: Holt-Winters multiplicative method with multiplicative trend, Holt-Winters multiplicative method with additive trend, and the State-Space (AAA_damped) method. The three models are fitted to compare which one is the most optimal for forecast with two years ahead.
+
+```{r}
+fit_mod1 <- hw(solar, seasonal = "multiplicative", exponential = T, h = 2*frequency(solar))
+fit_mod2 <- hw(solar, seasonal = "multiplicative", h = 2*frequency(solar))
+fit_mod3 <- ets(solar,model="AAA", damped=T)
+for_fit_mod3 <- forecast.ets(fit_mod3)
+plot(for_fit_mod3, fcol = "white", main = "Solar radiation series (Two years ahead forecasts)", ylab = "Solar Radiation", ylim = c(-10,55))
+lines(fitted(fit_mod1), col = "blue")
+lines(fit_mod1$mean, col = "blue", lwd = 4)
+lines(fitted(fit_mod2), col = "red")
+lines(fit_mod2$mean, col = "red", lwd = 4)
+lines(fitted(fit_mod3), col = "green")
+lines(for_fit_mod3$mean, col = "green", lwd = 4)
+legend("bottomleft", lty = 1, col = c("black", "blue", "red", "green"), 
+       c("Data", "Holt-Winters' Multiplicative Multiplicative", 
+         "Holt-Winters' Multiplicative Additive", "State-Space(AAA_damped)"), cex = 0.4)
+```
+
+From the plot, we can see that the State-Space method is the most far off, most evidently around 1967, where the State-Space line is obviously much further from the data line compared to the two Holt-Winters method lines. Between these two methods, we can see that the Holt-Winters multiplicative method with multiplicative trend is closer to the actual data. Thus, it will be used for the final forecast.
+
+```{r}
+plot(fit_mod1, fcol = "white", main = "Solar radiation series (Two years ahead forecasts)", ylab = "Solar Radiation")
+lines(fitted(fit_mod1), col = "blue")
+lines(fit_mod1$mean, col = "blue", lwd = 4)
+legend("topleft", lty = 1, col = c("black", "blue"), c("Data", "Forecasts"))
+```
+
+Finally, we have the 2 years ahead forecast values of the amount of horizontal solar radiation reaching the ground at a particular location over the globe:
+
+```{r}
+forc <- fit_mod1$mean
+ub <- fit_mod1$upper[,2]
+lb <- fit_mod1$lower[,2]
+forecasts <- ts.intersect(ts(lb, start = c(2015,1), frequency = 12), ts(forc,start = c(2015,1), frequency = 12), ts(ub,start = c(2015,1), frequency = 12))
+colnames(forecasts) <- c("Lower bound", "Point forecast", "Upper bound")
+forecasts
+```
+
+<font size="7"> **Task 2** </font>
+
+<font size="7"> **Data description** </font>
+
+The first step of task 2 is to load the dataset containing the information about Property Price Index (PPI) and population change.
+
+```{r}
+price_data <- read.csv("/Users/macbookair/Desktop/data2.csv")
+head(price_data)
+```
+
+After that, time series of the property price data and the population change data are created.
+
+```{r}
+prop_change <- ts(price_data[,2:3], start = c(2003,3), frequency = 4)
+prop <- ts(price_data$price, start = c(2003,3), frequency = 4)
+change <- ts(price_data$change, start = c(2003,3), frequency = 4)
+head(prop_change)
+```
+
+<font size="7"> **Data exploration, visualisation, and investigation ** </font>
+
+```{r}
+plot(prop_change, main="Time series plot of Price vs Change")
+```
+
+From the plot, we can see that both series have an increasing trend. The visualisation implies that there is some correlation between the property price index and the population change series. In order to investigate this further, the correlation coefficient is calculated.
+
+```{r}
+cor(prop,change)
+```
+
+The correlation coefficient of 0.6970439 suggests that there is a positive correlation between the two series. Next, a CCF plot of the two series is constructed.
+
+```{r}
+ccf(as.vector(prop), as.vector(change), ylab = "CCF", main = "CCF of Property Price Index (PPI) and population change")
+```
+
+From the CCF plot, we can see that there is a high chance of cross correlation between Property Price Index (PPI) and population change. From the time series plot, the correlation coefficient, and the CCF plot, it is very likely that correlation exists between the two series. However, to be certain, we need to conduct adf tests on both series to check their stationarity.
+
+```{r}
+adf.test(prop)
+adf.test(change)
+```
+
+Both ADF tests produced p-value greater than 0.05, thus, both series are nonstationary. This increases the chance that the signs of correlation between the two series that were shown in previous tests might be spurious. In order to be definitively certain, we will apply prewhitening and plot a CCF of the two series after making sure they are stationary.
+
+```{r}
+diff <- ts.intersect(diff(diff(prop,4)), diff(diff(change,4)))
+prewhiten(as.vector(diff[,1]), as.vector(diff[,2]), ylab='CCF', main = "CFF of Property Price Index (PPI) and population change prewhitened")
+```
+
+From the prewhitened CCF plot, we can see that there is no significant correlation between Property Price Index (PPI) and population change. Thus, it is concluded that the correlation between the two series is spurious.
+
+<font size="7"> **Conclusion ** </font>
+
+Task 1:
+All the models that were tested in this task came with their own set of problems. The final three models chosen were Holt-Winters multiplicative method with multiplicative trend, Holt-Winters multiplicative method with additive trend, and the State-Space (AAA_damped) method based on their MASE values. However, all of them suffer from normality issues which will affect any statistical analysis that assume normality. It was found that the Holt-Winters multiplicative method with multiplicative trend was the most successful model, thus, it was utilized for the final forecast. However, the results have very wide bounds, thus, it can be seen as unreliable.
+
+Task 2:
+The Property Price Index (PPI) series and the Population Change series seemed like they were very likely to be cross-correlated through the first few tests including a time series plot, calculating their correlation coefficient, and a CCF plot. However, after testing their nonstationarity, it was found that there is a high chance that these tests can be misleading due to the series' nonstationarity. Thus, after implementing the prewhitening method, it was found that the correlation between the two series was indeed spurious.
